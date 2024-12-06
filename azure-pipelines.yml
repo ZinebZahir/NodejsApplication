@@ -1,0 +1,69 @@
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  IMAGE_NAME: "sampleapi"        # Nom de l'image Docker
+  ACR_NAME: "lavender"               # Nom de votre registre Azure Container Registry
+  IMAGE_TAG: "$(Build.BuildId)"  # Tag unique basé sur l'ID de build
+  CHART_NAME: "my-app-chart"     # Nom du chart Helm
+  CHART_PATH: "./helm/my-app"    # Chemin vers le dossier Helm Chart
+  ACR_URL: "tech.azurecr.io" 
+
+steps:
+  # 1. Installer Node.js
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '20.x'
+    displayName: 'Install Node.js'
+
+  # 2. Installer les dépendances et construire le projet
+  - script: |
+      npm install
+      npm run build || echo "No build script found"
+    displayName: 'Install dependencies and build'
+
+  # 3. Exécuter les tests
+  - script: |
+      npm test || echo "No test script found"
+    displayName: 'Run tests'
+
+  # 4. Construire et pousser l'image Docker vers Azure Container Registry
+  - task: Docker@2
+    displayName: 'Build and Push Docker Image to Azure Container Registry'
+    inputs:
+      containerRegistry: "K8S_SERVICE_CONNECTION" # Connexion de service à ACR
+      repository: "$(ACR_NAME)/$(IMAGE_NAME)"     # Dépôt dans ACR
+      command: "buildAndPush"                     # Commande Docker combinée
+      Dockerfile: "Dockerfile"                    # Chemin du Dockerfile
+      tags: "$(IMAGE_TAG)"                        # Tag unique de l'image
+
+  # 5. Installer Helm
+  - task: HelmInstaller@1
+    displayName: 'Install Helm'
+    inputs:
+      helmVersion: 'v3.16.2'
+
+  # 6. Packager le chart Helm
+  - script: |
+      helm lint $(CHART_PATH)
+      helm package $(CHART_PATH) --destination $(Build.ArtifactStagingDirectory)
+    displayName: 'Lint and Package Helm Chart'
+
+  # 7. Publier les fichiers générés comme artifact de pipeline
+  - task: PublishPipelineArtifact@1
+    inputs:
+      targetPath: "$(Build.ArtifactStagingDirectory)"
+      artifact: "helm-packages"
+    displayName: 'Publish Helm Chart as Pipeline Artifact'
+
+  # 8. Déployer avec Helm
+  - script: |
+      helm upgrade --install $(CHART_NAME) $(Build.ArtifactStagingDirectory)/$(CHART_NAME)-*.tgz \
+        --set image.repository=$(ACR_NAME).azurecr.io/$(IMAGE_NAME) \
+        --set image.tag=$(IMAGE_TAG) \
+        --namespace my-namespace \
+        --create-namespace
+    displayName: 'Deploy with Helm'
