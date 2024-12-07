@@ -49,7 +49,7 @@ steps:
   displayName: 'Deploy to Kubernetes'
   inputs:
     azureSubscription: $(kubernetesServiceConnection)
-    kubernetesCluster: 'Your-K8S-Cluster-Name'
+    kubernetesCluster: 'MyAKSCluster'
     namespace: $(namespace)
     command: upgrade
     chartType: FilePath
