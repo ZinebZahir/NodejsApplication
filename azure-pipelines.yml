@@ -1,21 +1,29 @@
+trigger:
+- main  # Déclenche le pipeline CI/CD sur des commits dans la branche main
+
 pool:
   name: Default
+
 variables:
-  acrurl: ' lavender.azurecr.io'
+  acrurl: 'lavender.azurecr.io'
+  kubernetesServiceConnection: 'K8S_SERVICE_CONNECTION'
+  namespace: 'default'
+  releaseName: 'sampleapi-release'
 
 steps:
+# Étapes CI
 - task: Docker@0
   displayName: 'Build an image'
   inputs:
     azureSubscription: 'K8S_SERVICE_CONNECTION'
-    azureContainerRegistry: '{"loginServer":"lavender.azurecr.io", "id" : "/subscriptions/095846c3-8075-4879-a286-8172117c2260/resourceGroups/K8S_RG/providers/Microsoft.ContainerRegistry/registries/lavender"}'
+    azureContainerRegistry: '{"loginServer":"lavender.azurecr.io", "id" : "/subscriptions/..."}'
     imageName: '$(acrurl)/sampleapi:$(Build.BuildId)'
 
 - task: Docker@0
   displayName: 'Push an image'
   inputs:
     azureSubscription: 'K8S_SERVICE_CONNECTION'
-    azureContainerRegistry: '{"loginServer":"lavender.azurecr.io", "id" : "/subscriptions/095846c3-8075-4879-a286-8172117c2260/resourceGroups/K8S_RG/providers/Microsoft.ContainerRegistry/registries/lavender"}'
+    azureContainerRegistry: '{"loginServer":"lavender.azurecr.io", "id" : "/subscriptions/..."}'
     imageName: '$(acrurl)/sampleapi:$(Build.BuildId)'
 
 - task: HelmInstaller@0
@@ -33,8 +41,21 @@ steps:
     chartNameForACR: Chart
     chartPathForACR: helm/Chart.yaml
 
-- task: PublishPipelineArtifact@1
-  displayName: 'Publish Pipline Artifact'
+# Étapes CD
+- task: HelmInstaller@1
+  displayName: 'Install Helm'
+
+- task: HelmDeploy@0
+  displayName: 'Deploy to Kubernetes'
   inputs:
-    targetPath: '$(Build.ArtifactStagingDirectory)'
-    artifact: sampleapi
+    azureSubscription: $(kubernetesServiceConnection)
+    kubernetesCluster: 'Your-K8S-Cluster-Name'
+    namespace: $(namespace)
+    command: upgrade
+    chartType: FilePath
+    chartPath: 'helm'
+    releaseName: $(releaseName)
+    overrideValues: |
+      image.repository=$(acrurl)/sampleapi
+      image.tag=$(Build.BuildId)
+    install: true
