@@ -49,6 +49,7 @@ steps:
   displayName: 'Deploy to Kubernetes'
   inputs:
     azureSubscription: $(kubernetesServiceConnection)
+    azureResourceGroup: 'K8S_RG'
     kubernetesCluster: 'MyAKSCluster'
     namespace: $(namespace)
     command: upgrade
