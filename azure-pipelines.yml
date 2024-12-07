@@ -1,89 +1,90 @@
 trigger:
-- main  # Déclenche le pipeline sur des commits dans la branche `main`
+  - main  # Trigger pipeline on commits to the main branch
 
 pool:
   name: Default
 
 variables:
-  acrurl: 'lavender.azurecr.io'  # URL du registre ACR
-  kubernetesServiceConnection: 'K8S_SERVICE_CONNECTION'  # Service Connection pour Kubernetes
-  namespace: 'default'  # Namespace Kubernetes
-  releaseName: 'sampleapi-release'  # Nom du release Helm
+  acrurl: 'lavender.azurecr.io'  # ACR URL
+  kubernetesServiceConnection: 'K8S_SERVICE_CONNECTION'  # Kubernetes service connection
+  namespace: 'default'  # Kubernetes namespace
+  releaseName: 'sampleapi-release'  # Helm release name
 
 steps:
-# Étape 1 : Construire et pousser l'image Docker
-- task: Docker@0
-  displayName: 'Build Docker Image'
-  inputs:
-    azureSubscription: $(kubernetesServiceConnection)
-    azureContainerRegistry: '{"loginServer":"$(acrurl)", "id" : "/subscriptions/..."}'
-    imageName: '$(acrurl)/sampleapi:$(Build.BuildId)'
+  # Step 1: Build Docker image
+  - task: Docker@0
+    displayName: 'Build Docker Image'
+    inputs:
+      azureSubscription: $(kubernetesServiceConnection)
+      azureContainerRegistry: '{"loginServer":"$(acrurl)", "id" : "/subscriptions/..."}'
+      imageName: '$(acrurl)/sampleapi:$(Build.BuildId)'
 
-- task: Docker@0
-  displayName: 'Push Docker Image to ACR'
-  inputs:
-    azureSubscription: $(kubernetesServiceConnection)
-    azureContainerRegistry: '{"loginServer":"$(acrurl)", "id" : "/subscriptions/..."}'
-    imageName: '$(acrurl)/sampleapi:$(Build.BuildId)'
+  # Step 2: Push Docker image to ACR
+  - task: Docker@0
+    displayName: 'Push Docker Image to ACR'
+    inputs:
+      azureSubscription: $(kubernetesServiceConnection)
+      azureContainerRegistry: '{"loginServer":"$(acrurl)", "id" : "/subscriptions/..."}'
+      imageName: '$(acrurl)/sampleapi:$(Build.BuildId)'
 
-# Étape 2 : Installer Helm
-- task: HelmInstaller@1
-  displayName: 'Install Helm'
+  # Step 3: Install Helm
+  - task: HelmInstaller@1
+    displayName: 'Install Helm'
 
-# Étape 3 : Empaqueter le chart Helm
-- task: HelmDeploy@1
-  displayName: 'Package Helm Chart'
-  inputs:
-    azureSubscriptionForACR: $(kubernetesServiceConnection)
-    azureResourceGroupForACR: 'K8S_RG'
-    azureContainerRegistry: $(acrurl)
-    command: package
-    chartPath: helm  # Répertoire contenant le chart Helm
-    destination: 'C:\Users\hp\Desktop\NodeApp\helm'  # Répertoire de sortie pour le fichier `.tgz`
-    chartVersion: '$(Build.BuildId)'
+  # Step 4: Package Helm chart
+  - task: HelmDeploy@1
+    displayName: 'Package Helm Chart'
+    inputs:
+      azureSubscriptionForACR: $(kubernetesServiceConnection)
+      azureResourceGroupForACR: 'K8S_RG'
+      azureContainerRegistry: $(acrurl)
+      command: package
+      chartPath: helm  # Directory with Helm chart
+      destination: '$(Pipeline.Workspace)/helm'  # Output directory for .tgz file
+      chartVersion: '$(Build.BuildId)'
 
+  # Step 5: Publish Helm chart as artifact
+  - task: PublishPipelineArtifact@1
+    displayName: 'Publish Helm Chart as Artifact'
+    inputs:
+      targetPath: '$(Pipeline.Workspace)/helm'
+      artifact: 'helm-chart'
 
-# Étape 5 : Publier le chart Helm comme artefact
-- task: PublishPipelineArtifact@1
-  displayName: 'Publish Helm Chart as Artifact'
-  inputs:
-    targetPath: 'C:\Users\hp\Desktop\NodeApp\helm\nodesampleapi-63.tgz'
-    artifact: 'helm-chart'
+  # Step 6: Download Helm chart artifact
+  - task: DownloadPipelineArtifact@2
+    displayName: 'Download Helm Chart Artifact'
+    inputs:
+      artifact: 'helm-chart'
+      path: '$(Pipeline.Workspace)/helm'
 
-# Étape 6 : Téléchargement et déploiement avec Helm
-- task: DownloadPipelineArtifact@2
-  displayName: 'Download Helm Chart Artifact'
-  inputs:
-    artifact: 'helm-chart'
-    path: '$(System.ArtifactsDirectory)/helm'
+  # Step 7: Deploy to Kubernetes with Helm
+  - task: HelmDeploy@0
+    displayName: 'Deploy to Kubernetes'
+    inputs:
+      azureSubscription: $(kubernetesServiceConnection)
+      azureResourceGroup: 'K8S_RG'
+      kubernetesCluster: 'MyAKSCluster'
+      namespace: $(namespace)
+      command: upgrade
+      chartType: FilePath
+      chartPath: '$(Pipeline.Workspace)/helm/nodesampleapi-$(Build.BuildId).tgz'
+      releaseName: $(releaseName)
+      overrideValues: |
+        image.repository=$(acrurl)/sampleapi
+        image.tag=$(Build.BuildId)
+      install: true
+      waitForExecution: true
+      arguments: '--timeout 600s'
 
-
-# Étape 7 : Déployer sur Kubernetes avec Helm
-- task: HelmDeploy@0
-  displayName: 'Deploy to Kubernetes'
-  inputs:
-    azureSubscription: $(kubernetesServiceConnection)
-    azureResourceGroup: 'K8S_RG'
-    kubernetesCluster: 'MyAKSCluster'
-    namespace: $(namespace)
-    command: upgrade
-    chartType: FilePath
-    chartPath: 'C:\Users\hp\Desktop\NodeApp\helm\nodesampleapi-63.tgz'
-    releaseName: $(releaseName)
-    overrideValues: |
-      image.repository=$(acrurl)/sampleapi
-      image.tag=$(Build.BuildId)
-    install: true
-
-# Étape 8 : Rollback en cas d’échec
-- task: HelmDeploy@0
-  displayName: 'Rollback on Failure'
-  condition: failed()
-  inputs:
-    azureSubscription: $(kubernetesServiceConnection)
-    azureResourceGroup: 'K8S_RG'
-    kubernetesCluster: 'MyAKSCluster'
-    namespace: $(namespace)
-    command: rollback
-    releaseName: $(releaseName)
-    revision: 0  # Rollback to the previous revision
+  # Step 8: Rollback on failure
+  - task: HelmDeploy@0
+    displayName: 'Rollback on Failure'
+    condition: failed()
+    inputs:
+      azureSubscription: $(kubernetesServiceConnection)
+      azureResourceGroup: 'K8S_RG'
+      kubernetesCluster: 'MyAKSCluster'
+      namespace: $(namespace)
+      command: rollback
+      releaseName: $(releaseName)
+      revision: 0  # Rollback to the previous revision
