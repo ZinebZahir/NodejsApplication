@@ -26,7 +26,7 @@ stages:
             scriptLocation: inlineScript
             inlineScript: |
               echo "Logging in to ACR..."
-              az acr login --name $(acrName)
+              az acr login --name lavender
 
         - script: |
             echo "Building Docker image..."
