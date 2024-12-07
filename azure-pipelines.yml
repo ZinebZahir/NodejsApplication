@@ -34,6 +34,16 @@ stages:
       inputs:
         helmVersionToInstall: 'latest'
 
+    - task: AzureCLI@2
+      displayName: 'Authenticate and Set kubectl Context'
+      inputs:
+        azureSubscription: $(kubernetesServiceConnection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az aks get-credentials --resource-group K8S_RG --name MyAKSCluster
+          kubectl config set-context --current --namespace=$(namespace)
+
     - task: HelmDeploy@1
       displayName: 'Package Helm Chart'
       inputs:
