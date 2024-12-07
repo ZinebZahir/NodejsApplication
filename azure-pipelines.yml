@@ -1,8 +1,14 @@
+trigger:
+- main
+
+pool:
+  name: 'default'
+
+
 variables:
   acrName: 'lavender'
   acrurl: 'lavender.azurecr.io'
-  dockerRegistryServiceConnection: 'ACR-Docker-Connection'  # Connexion Docker/ACR
-  kubernetesServiceConnection: 'K8S_SERVICE_CONNECTION'     # Connexion Kubernetes
+  kubernetesServiceConnection: 'K8S_SERVICE_CONNECTION'  # Connexion Kubernetes
   namespace: 'default'
   releaseName: 'sampleapi-release'
 
@@ -13,14 +19,25 @@ stages:
     - job: BuildAndPush
       displayName: "Build and Push Docker Image"
       steps:
-        - task: Docker@2
-          displayName: "Build and Push Docker Image"
+        - task: AzureCLI@2
+          displayName: "Login to Azure ACR"
           inputs:
-            containerRegistry: 'ACR-Docker-Connection'  # Connexion correcte à ACR
-            repository: 'sampleapi'
-            command: 'buildAndPush'
-            Dockerfile: '**/Dockerfile'
-            tags: '$(Build.BuildId)'
+            azureSubscription: $(kubernetesServiceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              echo "Logging in to ACR..."
+              az acr login --name $(acrName)
+
+        - script: |
+            echo "Building Docker image..."
+            docker build -t $(acrurl)/sampleapi:$(Build.BuildId) .
+          displayName: "Build Docker Image"
+
+        - script: |
+            echo "Pushing Docker image to ACR..."
+            docker push $(acrurl)/sampleapi:$(Build.BuildId)
+          displayName: "Push Docker Image to ACR"
 
 - stage: PackageHelm
   displayName: "Package Helm Chart"
