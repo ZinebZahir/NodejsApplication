@@ -49,14 +49,29 @@ steps:
   displayName: 'Deploy to Kubernetes'
   inputs:
     azureSubscription: $(kubernetesServiceConnection)
-    azureResourceGroup: 'K8S_RG'
-    kubernetesCluster: 'MyAKSCluster'
+    azureResourceGroup: 'YourResourceGroupName'
+    kubernetesCluster: 'Your-K8S-Cluster-Name'
     namespace: $(namespace)
     command: upgrade
     chartType: FilePath
-    chartPath: 'helm'
+    chartPath: '$(System.ArtifactsDirectory)/helm'
     releaseName: $(releaseName)
     overrideValues: |
       image.repository=$(acrurl)/sampleapi
       image.tag=$(Build.BuildId)
     install: true
+  continueOnError: true  # Permet à la tâche de signaler une erreur mais de continuer à exécuter les tâches suivantes
+
+- task: HelmDeploy@0
+  displayName: 'Rollback on failure'
+  condition: failed()  # Exécute cette tâche uniquement si une tâche précédente échoue
+  inputs:
+    azureSubscription: $(kubernetesServiceConnection)
+    azureResourceGroup: 'YourResourceGroupName'
+    kubernetesCluster: 'Your-K8S-Cluster-Name'
+    namespace: $(namespace)
+    command: rollback
+    releaseName: $(releaseName)
+    version: $(Build.BuildId)  # Ou laissez vide pour revenir à la version précédente
+
+
