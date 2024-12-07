@@ -13,10 +13,13 @@ image:
   repository: lavender.azurecr.io/sampleapi
   pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "32"
+  tag: "91"
 
 imagePullSecrets:
   - name: lavender-acr-secret
+containers:
+  - name: nodesampleapi
+    image:  lavender.azurecr.io/sampleapi/sampleapi:91
 
 nameOverride: ""
 fullnameOverride: ""
