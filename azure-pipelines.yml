@@ -1,108 +1,99 @@
 trigger:
-  - main
+- main  # Déclenche le pipeline sur des commits dans la branche main
 
 pool:
-  name: Default
+  vmImage: 'ubuntu-latest'
 
 variables:
-  acrurl: 'lavender.azurecr.io'
-  dockerRegistryServiceConnection: 'ACR-Docker-Connection'  # Nouvelle connection Docker
-  kubernetesServiceConnection: 'K8S_SERVICE_CONNECTION'
-  namespace: 'default'
-  releaseName: 'sampleapi-release'
+  acrurl: 'lavender.azurecr.io'  # URL du registre ACR
+  kubernetesServiceConnection: 'K8S_SERVICE_CONNECTION'  # Service Connection pour Kubernetes
+  namespace: 'default'  # Namespace Kubernetes
+  releaseName: 'sampleapi-release'  # Nom du release Helm
 
 stages:
+# **Stage 1 - Build et Push Docker Image**
 - stage: Build
+  displayName: "Build and Push Docker Image"
   jobs:
-  - job: BuildAndPush
-    steps:
-    - task: Docker@2
-      displayName: 'Build and Push Docker Image'
-      inputs:
-        containerRegistry: $(dockerRegistryServiceConnection)
-        repository: 'sampleapi'
-        command: 'buildAndPush'
-        Dockerfile: 'Dockerfile'
-        tags: '$(Build.BuildId)'
+    - job: BuildAndPush
+      displayName: "Build and Push Docker Image"
+      steps:
+        # Connexion à Azure pour s'authentifier auprès de l'ACR
+        - task: AzureCLI@2
+          displayName: "Login to Azure ACR"
+          inputs:
+            azureSubscription: $(kubernetesServiceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              echo "Logging in to ACR..."
+              az acr login --name $(acrurl)
 
+        # Construction de l'image Docker
+        - script: |
+            echo "Building Docker image..."
+            docker build -t $(acrurl)/sampleapi:$(Build.BuildId) .
+          displayName: "Build Docker Image"
+
+        # Pousser l'image Docker dans l'ACR
+        - script: |
+            echo "Pushing Docker image to ACR..."
+            docker push $(acrurl)/sampleapi:$(Build.BuildId)
+          displayName: "Push Docker Image to ACR"
+
+# **Stage 2 - Package Helm Chart**
+- stage: PackageHelm
+  displayName: "Package Helm Chart"
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+    - job: HelmPackage
+      displayName: "Package Helm Chart"
+      steps:
+        - task: HelmInstaller@1
+          displayName: 'Install Helm'
+
+        - script: |
+            helm package ./helm --destination $(System.ArtifactsDirectory)/helm --version $(Build.BuildId)
+          displayName: "Package Helm Chart"
+
+        - task: PublishPipelineArtifact@1
+          displayName: 'Publish Helm Chart as Artifact'
+          inputs:
+            targetPath: '$(System.ArtifactsDirectory)/helm'
+            artifact: 'helm-chart'
+
+# **Stage 3 - Déploiement Manuel**
 - stage: Deploy
+  displayName: "Deploy to AKS (Manual)"
+  dependsOn: PackageHelm
+  condition: succeeded()
   jobs:
-  - job: HelmDeploy
-    steps:
-    - task: HelmInstaller@1
-      displayName: 'Install Helm'
-      inputs:
-        helmVersionToInstall: 'latest'
+    - deployment: DeployApp
+      displayName: "Manual Approval & Deploy to AKS"
+      environment: "aks-environment"  # L'environnement configuré dans Azure DevOps
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - task: DownloadPipelineArtifact@2
+                displayName: 'Download Helm Chart Artifact'
+                inputs:
+                  artifact: 'helm-chart'
+                  path: '$(System.ArtifactsDirectory)/helm'
 
-    - task: AzureCLI@2
-      displayName: 'Authenticate and Set kubectl Context'
-      inputs:
-        azureSubscription: $(kubernetesServiceConnection)
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          az account set --subscription 095846c3-8075-4879-a286-8172117c2260
-          az aks get-credentials --resource-group K8S_RG --name MyAKSCluster
-          kubectl config set-context --current --namespace=$(namespace)
-
-    - task: HelmDeploy@1
-      displayName: 'Package Helm Chart'
-      inputs:
-        azureSubscriptionForACR: $(kubernetesServiceConnection)
-        azureResourceGroupForACR: 'K8S_RG'
-        azureContainerRegistry: $(acrurl)
-        command: package
-        chartPath: 'helm'
-        destination: '$(Build.ArtifactStagingDirectory)/helm'
-        chartVersion: '$(Build.BuildId)'
-
-    - task: PublishPipelineArtifact@1
-      displayName: 'Publish Helm Chart'
-      inputs:
-        targetPath: '$(Build.ArtifactStagingDirectory)/helm'
-        artifact: 'helm-chart'
-
-    - task: HelmDeploy@0
-      displayName: 'Deploy to Kubernetes'
-      inputs:
-        azureSubscription: $(kubernetesServiceConnection)
-        azureResourceGroup: 'K8S_RG'
-        kubernetesCluster: 'MyAKSCluster'
-        namespace: $(namespace)
-        command: upgrade
-        chartType: FilePath
-        chartPath: '$(Build.ArtifactStagingDirectory)/helm/nodesampleapi-$(Build.BuildId).tgz'
-        releaseName: $(releaseName)
-        install: true
-        timeoutInMinutes: 15
-        overrideValues: |
-          image.repository=$(acrurl)/sampleapi
-          image.tag=$(Build.BuildId)
-          resources:
-            limits:
-              cpu: 500m
-              memory: 512Mi
-            requests:
-              cpu: 250m
-              memory: 256Mi
-
-    - bash: |
-        kubectl cluster-info
-        kubectl get nodes
-        kubectl get events -n $(namespace)
-        kubectl describe deployment $(releaseName)-nodesampleapi -n $(namespace)
-      displayName: 'Kubernetes Diagnostic'
-      condition: failed()
-      continueOnError: true
-
-    - task: HelmDeploy@0
-      displayName: 'Rollback on Critical Failure'
-      condition: failed()
-      inputs:
-        azureSubscription: $(kubernetesServiceConnection)
-        azureResourceGroup: 'K8S_RG'
-        kubernetesCluster: 'MyAKSCluster'
-        namespace: $(namespace)
-        command: rollback
-        releaseName: $(releaseName)
-        revision: 0
+              - task: HelmDeploy@0
+                displayName: 'Deploy to Kubernetes'
+                inputs:
+                  azureSubscription: $(kubernetesServiceConnection)
+                  azureResourceGroup: 'K8S_RG'
+                  kubernetesCluster: 'MyAKSCluster'
+                  namespace: $(namespace)
+                  command: upgrade
+                  chartType: FilePath
+                  chartPath: '$(System.ArtifactsDirectory)/helm/sampleapi-$(Build.BuildId).tgz'
+                  releaseName: $(releaseName)
+                  overrideValues: |
+                    image.repository=$(acrurl)/sampleapi
+                    image.tag=$(Build.BuildId)
+                  install: true
