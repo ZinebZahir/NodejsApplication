@@ -68,7 +68,7 @@ steps:
     namespace: $(namespace)
     command: upgrade
     chartType: FilePath
-    chartPath: '$(System.ArtifactsDirectory)/helm/nodesampleapi-*.tgz'
+    chartPath: 'C:\Users\hp\Desktop\NodeApp\helm\nodesampleapi-63.tgz'
     releaseName: $(releaseName)
     overrideValues: |
       image.repository=$(acrurl)/sampleapi
