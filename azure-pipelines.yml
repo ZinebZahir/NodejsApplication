@@ -4,11 +4,10 @@ trigger:
 pool:
   name: 'default'
 
-
 variables:
   acrName: 'lavender'
-  acrurl: 'lavender.azurecr.io'
-  kubernetesServiceConnection: 'K8S_SERVICE_CONNECTION'  # Connexion Kubernetes
+  acrUrl: 'lavender.azurecr.io'
+  kubernetesServiceConnection: 'K8S_SERVICE_CONNECTION'
   namespace: 'default'
   releaseName: 'sampleapi-release'
 
@@ -26,72 +25,40 @@ stages:
             scriptType: bash
             scriptLocation: inlineScript
             inlineScript: |
-              echo "Logging in to ACR..."
+              echo "Logging in to Azure ACR..."
               az acr login --name $(acrName)
 
         - script: |
             echo "Building Docker image..."
-            docker build -t $(acrurl)/sampleapi:$(Build.BuildId) .
+            docker build -t $(acrUrl)/sampleapi:$(Build.BuildId) .
           displayName: "Build Docker Image"
 
         - script: |
             echo "Pushing Docker image to ACR..."
-            docker push $(acrurl)/sampleapi:$(Build.BuildId)
+            docker push $(acrUrl)/sampleapi:$(Build.BuildId)
           displayName: "Push Docker Image to ACR"
 
-- stage: PackageHelm
-  displayName: "Package Helm Chart"
+- stage: Deploy
+  displayName: "Deploy to AKS"
   dependsOn: Build
   condition: succeeded()
   jobs:
-    - job: HelmPackage
-      displayName: "Package Helm Chart"
-      steps:
-        - task: HelmInstaller@1
-          displayName: 'Install Helm'
-
-        - script: |
-            echo "Checking Helm Chart structure..."
-            if [ ! -f ./helm/Chart.yaml ]; then echo "Chart.yaml not found!"; exit 1; fi
-            helm package ./helm --destination $(System.ArtifactsDirectory)/helm --version $(Build.BuildId)
-          displayName: "Package Helm Chart"
-
-        - task: PublishPipelineArtifact@1
-          displayName: 'Publish Helm Chart as Artifact'
-          inputs:
-            targetPath: '$(System.ArtifactsDirectory)/helm'
-            artifact: 'helm-chart'
-
-- stage: Deploy
-  displayName: "Deploy to AKS (Manual)"
-  dependsOn: PackageHelm
-  condition: succeeded()
-  jobs:
     - deployment: DeployApp
-      displayName: "Manual Approval & Deploy to AKS"
-      environment: "aks-environment"
+      displayName: "Deploy to AKS"
+      environment: 'aks-environment'
       strategy:
         runOnce:
           deploy:
             steps:
-              - task: DownloadPipelineArtifact@2
-                displayName: 'Download Helm Chart Artifact'
-                inputs:
-                  artifact: 'helm-chart'
-                  path: '$(System.ArtifactsDirectory)/helm'
+              - task: HelmInstaller@1
+                displayName: 'Install Helm'
 
-              - task: HelmDeploy@0
-                displayName: 'Deploy to Kubernetes'
-                inputs:
-                  azureSubscription: 'K8S_SERVICE_CONNECTION'  # Connexion Kubernetes
-                  azureResourceGroup: 'K8S_RG'
-                  kubernetesCluster: 'MyAKSCluster'
-                  namespace: $(namespace)
-                  command: upgrade
-                  chartType: FilePath
-                  chartPath: '$(System.ArtifactsDirectory)/helm/sampleapi-$(Build.BuildId).tgz'
-                  releaseName: $(releaseName)
-                  overrideValues: |
-                    image.repository=$(acrurl)/sampleapi
-                    image.tag=$(Build.BuildId)
-                  install: true
+              - script: |
+                  echo "Adding Helm repo..."
+                  helm repo add my-acr-repo https://$(acrName).azurecr.io/helm/v1/repo
+                  echo "Deploying to AKS using Helm..."
+                  helm upgrade --install $(releaseName) ./helm \
+                    --namespace $(namespace) \
+                    --set image.repository=$(acrUrl)/sampleapi \
+                    --set image.tag=$(Build.BuildId)
+                displayName: "Deploy Helm Chart"
