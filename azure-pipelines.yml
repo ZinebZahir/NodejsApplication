@@ -57,10 +57,6 @@ steps:
     artifact: 'helm-chart'
     path: '$(System.ArtifactsDirectory)/helm'
 
-- script: |
-    echo "Listing downloaded Helm Chart files:"
-    ls -la $(System.ArtifactsDirectory)/helm
-  displayName: 'Verify Downloaded Helm Chart'
 
 # Étape 7 : Déployer sur Kubernetes avec Helm
 - task: HelmDeploy@0
@@ -82,7 +78,7 @@ steps:
 # Étape 8 : Rollback en cas d’échec
 - task: HelmDeploy@0
   displayName: 'Rollback on Failure'
-  condition: failed()  # S'exécute uniquement si une étape précédente échoue
+  condition: failed()
   inputs:
     azureSubscription: $(kubernetesServiceConnection)
     azureResourceGroup: 'K8S_RG'
@@ -90,3 +86,4 @@ steps:
     namespace: $(namespace)
     command: rollback
     releaseName: $(releaseName)
+    revision: 0  # Rollback to the previous revision
