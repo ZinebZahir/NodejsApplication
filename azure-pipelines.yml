@@ -1,24 +1,23 @@
 trigger:
-- main  # Déclenche le pipeline sur des commits dans la branche main
+- main
 
 pool:
   name: 'default'
 
 variables:
-  acrurl: 'lavender.azurecr.io'  # URL du registre ACR
-  kubernetesServiceConnection: 'K8S_SERVICE_CONNECTION'  # Service Connection pour Kubernetes
-  namespace: 'default'  # Namespace Kubernetes
-  releaseName: 'sampleapi-release'  # Nom du release Helm
+  acrName: 'lavender'  # Nom du registre ACR
+  acrurl: 'lavender.azurecr.io'
+  kubernetesServiceConnection: 'K8S_SERVICE_CONNECTION'
+  namespace: 'default'
+  releaseName: 'sampleapi-release'
 
 stages:
-# **Stage 1 - Build et Push Docker Image**
 - stage: Build
   displayName: "Build and Push Docker Image"
   jobs:
     - job: BuildAndPush
       displayName: "Build and Push Docker Image"
       steps:
-        # Connexion à Azure pour s'authentifier auprès de l'ACR
         - task: AzureCLI@2
           displayName: "Login to Azure ACR"
           inputs:
@@ -27,21 +26,18 @@ stages:
             scriptLocation: inlineScript
             inlineScript: |
               echo "Logging in to ACR..."
-              az acr login --name $(acrurl)
+              az acr login --name $(acrName)
 
-        # Construction de l'image Docker
         - script: |
             echo "Building Docker image..."
             docker build -t $(acrurl)/sampleapi:$(Build.BuildId) .
           displayName: "Build Docker Image"
 
-        # Pousser l'image Docker dans l'ACR
         - script: |
             echo "Pushing Docker image to ACR..."
             docker push $(acrurl)/sampleapi:$(Build.BuildId)
           displayName: "Push Docker Image to ACR"
 
-# **Stage 2 - Package Helm Chart**
 - stage: PackageHelm
   displayName: "Package Helm Chart"
   dependsOn: Build
@@ -54,6 +50,8 @@ stages:
           displayName: 'Install Helm'
 
         - script: |
+            echo "Checking Helm Chart structure..."
+            if [ ! -f ./helm/Chart.yaml ]; then echo "Chart.yaml not found!"; exit 1; fi
             helm package ./helm --destination $(System.ArtifactsDirectory)/helm --version $(Build.BuildId)
           displayName: "Package Helm Chart"
 
@@ -63,7 +61,6 @@ stages:
             targetPath: '$(System.ArtifactsDirectory)/helm'
             artifact: 'helm-chart'
 
-# **Stage 3 - Déploiement Manuel**
 - stage: Deploy
   displayName: "Deploy to AKS (Manual)"
   dependsOn: PackageHelm
@@ -71,7 +68,7 @@ stages:
   jobs:
     - deployment: DeployApp
       displayName: "Manual Approval & Deploy to AKS"
-      environment: "aks-environment"  # L'environnement configuré dans Azure DevOps
+      environment: "aks-environment"
       strategy:
         runOnce:
           deploy:
