@@ -45,8 +45,9 @@ steps:
 # Étape 4 : Vérifier le contenu du chart Helm empaqueté
 - script: |
     echo "Listing files in $(Build.ArtifactStagingDirectory):"
-    ls -la $(Build.ArtifactStagingDirectory)
+    dir "$(Build.ArtifactStagingDirectory)"
   displayName: 'Verify Packaged Helm Chart'
+
 
 # Étape 5 : Publier le chart Helm comme artefact
 - task: PublishPipelineArtifact@1
