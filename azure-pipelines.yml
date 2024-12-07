@@ -1,5 +1,5 @@
 trigger:
-- main  # Déclenche le pipeline CI/CD sur des commits dans la branche main
+- main
 
 pool:
   name: Default
@@ -15,15 +15,15 @@ steps:
 - task: Docker@0
   displayName: 'Build an image'
   inputs:
-    azureSubscription: 'K8S_SERVICE_CONNECTION'
-    azureContainerRegistry: '{"loginServer":"lavender.azurecr.io", "id" : "/subscriptions/..."}'
+    azureSubscription: $(kubernetesServiceConnection)
+    azureContainerRegistry: '{"loginServer":"lavender.azurecr.io", "id": "/subscriptions/..."}'
     imageName: '$(acrurl)/sampleapi:$(Build.BuildId)'
 
 - task: Docker@0
   displayName: 'Push an image'
   inputs:
-    azureSubscription: 'K8S_SERVICE_CONNECTION'
-    azureContainerRegistry: '{"loginServer":"lavender.azurecr.io", "id" : "/subscriptions/..."}'
+    azureSubscription: $(kubernetesServiceConnection)
+    azureContainerRegistry: '{"loginServer":"lavender.azurecr.io", "id": "/subscriptions/..."}'
     imageName: '$(acrurl)/sampleapi:$(Build.BuildId)'
 
 - task: HelmInstaller@0
@@ -32,7 +32,7 @@ steps:
 - task: HelmDeploy@1
   displayName: 'helm package'
   inputs:
-    azureSubscriptionForACR: 'K8S_SERVICE_CONNECTION'
+    azureSubscriptionForACR: $(kubernetesServiceConnection)
     azureResourceGroupForACR: 'K8S_RG'
     azureContainerRegistry: lavender.azurecr.io
     command: package
@@ -41,9 +41,23 @@ steps:
     chartNameForACR: Chart
     chartPathForACR: helm/Chart.yaml
 
+- task: PublishPipelineArtifact@1
+  displayName: 'Publish Helm Chart as Artifact'
+  inputs:
+    targetPath: 'helm/*.tgz'
+    artifact: helm-chart
+
 # Étapes CD
-- task: HelmInstaller@1
-  displayName: 'Install Helm'
+- task: DownloadPipelineArtifact@2
+  displayName: 'Download Helm Chart Artifact'
+  inputs:
+    artifact: 'helm-chart'
+    path: '$(System.ArtifactsDirectory)/helm'
+
+- script: |
+    echo "Vérification des fichiers téléchargés :"
+    ls -la $(System.ArtifactsDirectory)/helm
+  displayName: 'Verify Helm Chart Files'
 
 - task: HelmDeploy@0
   displayName: 'Deploy to Kubernetes'
@@ -54,24 +68,10 @@ steps:
     namespace: $(namespace)
     command: upgrade
     chartType: FilePath
-    chartPath: '$(System.ArtifactsDirectory)/helm'
+    chartPath: '$(System.ArtifactsDirectory)/helm/nodesampleapi-*.tgz'
     releaseName: $(releaseName)
     overrideValues: |
       image.repository=$(acrurl)/sampleapi
       image.tag=$(Build.BuildId)
     install: true
-  continueOnError: true  # Permet à la tâche de signaler une erreur mais de continuer à exécuter les tâches suivantes
-
-- task: HelmDeploy@0
-  displayName: 'Rollback on failure'
-  condition: failed()  # Exécute cette tâche uniquement si une tâche précédente échoue
-  inputs:
-    azureSubscription: $(kubernetesServiceConnection)
-    azureResourceGroup: 'K8S_RG'
-    kubernetesCluster: 'MyAKSClustere'
-    namespace: $(namespace)
-    command: rollback
-    releaseName: $(releaseName)
-    version: $(Build.BuildId)  # Ou laissez vide pour revenir à la version précédente
-
-
+  continueOnError: false
