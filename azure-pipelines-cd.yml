@@ -1,0 +1,43 @@
+trigger:
+- none  # Le pipeline CD est généralement déclenché après la réussite de la pipeline CI.
+
+pr:
+- none  # Si vous ne souhaitez pas que le pipeline soit déclenché par un PR.
+
+pool:
+  name: Default
+
+# Déclencheur pour récupérer l'artefact du pipeline CI
+resources:
+  pipelines:
+  - pipeline: ci-pipeline  # Nom du pipeline CI (remplacez-le si nécessaire)
+    source: sampleapi       # Le nom de l'artefact publié dans CI
+    trigger:
+      branches:
+        include:
+        - main  # Ou la branche de votre choix, celle qui déclenche le pipeline CI.
+
+steps:
+# 1. Helm Upgrade - Déployer ou mettre à jour l'application sur AKS
+- task: HelmDeploy@0
+  displayName: 'helm upgrade'
+  inputs:
+    azureSubscription: 'K8S_SERVICE_CONNECTION'
+    azureResourceGroup: 'K8S_RG'
+    kubernetesCluster: MyAKSCluster  # Remplacez par le nom de votre cluster AKS
+    namespace: default  # Vous pouvez changer le namespace si nécessaire
+    command: upgrade
+    chartType: FilePath
+    chartPath: '$(System.DefaultWorkingDirectory)/_ci-pipeline/sampleapi/nodesampleapi-*.tgz'  # Chemin de l'artefact Helm
+    releaseName: sampleapi
+
+# 2. Helm Rollback en cas d'échec du déploiement
+- task: HelmDeploy@0
+  displayName: 'helm rollback'
+  inputs:
+    azureSubscription: 'K8S_SERVICE_CONNECTION'
+    azureResourceGroup: 'K8S_RG'
+    kubernetesCluster: MyAKSCluster
+    namespace: default
+    command: rollback
+  condition: failed()  # Effectue le rollback en cas d'échec du déploiement
