@@ -4,98 +4,105 @@
 
 application:
   author: Zineb Zahir
-  name: sampleapi #Aadhar Vault Manager
+  name: sampleapi
   type: api
 
+# Déploiement
 replicaCount: 1
 
+# Configuration de l'image Docker
 image:
   repository: lavender.azurecr.io/sampleapi
-  pullPolicy: Always
-  # Overrides the image tag whose default is the chart appVersion.
-  tag: "91"
+  pullPolicy: IfNotPresent
+  tag: "91"   # Modifiez dynamiquement via Azure DevOps
 
+# Secret pour l'accès au registre
 imagePullSecrets:
   - name: lavender-acr-secret
+
+# Conteneur principal
 containers:
   - name: nodesampleapi
-    image:  lavender.azurecr.io/sampleapi/sampleapi:91
+    image: lavender.azurecr.io/sampleapi:91
+    ports:
+      - containerPort: 80
 
+# Nom personnalisé (optionnel)
 nameOverride: ""
 fullnameOverride: ""
 
+# Compte de service Kubernetes
 serviceAccount:
-  # Specifies whether a service account should be created
   create: true
-  # Annotations to add to the service account
   annotations: {}
-  # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
   name: ""
 
-podAnnotations: {}
+# Annotations pour les Pods
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: "/metrics"
+  prometheus.io/port: "80"
 
-podSecurityContext: {}
-  # fsGroup: 2000
+# Contexte de sécurité des Pods
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 2000
 
-securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
+securityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
 
+# Service Kubernetes
 service:
-  type: LoadBalancer
+  type: LoadBalancer   # Expose le service au monde extérieur
   port: 80
 
+# Ingress (optionnel)
 ingress:
   enabled: false
-  className: ""
-  annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
+  className: "nginx"
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
   hosts:
-    - host: chart-example.local
+    - host: sampleapi.lavender.com
       paths:
         - path: /
-          pathType: ImplementationSpecific
-  tls: []
+          pathType: Prefix
+  tls:
+    - secretName: sampleapi-tls
+      hosts:
+        - sampleapi.lavender.com
 
+# Gestion des ressources
+resources:
+  requests:
+    cpu: "200m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
 
-
-
-
-
-
-  #  - secretName: chart-example-tls
-  #    hosts:
-  #      - chart-example.local
-
-resources: 
-  # We usually recommend not to specify default resources and to leave this as a conscious
-  # choice for the user. This also increases chances charts run on environments with little
-  # resources, such as Minikube. If you do want to specify resources, uncomment the following
-  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
-   limits:
-     cpu: 200m
-     memory: 256Mi
-   requests:
-     cpu: 100m
-     memory: 128Mi
-
-
-
+# Autoscaling
 autoscaling:
-  enabled: false
+  enabled: true
   minReplicas: 1
-  maxReplicas: 100
+  maxReplicas: 5
   targetCPUUtilizationPercentage: 80
-  # targetMemoryUtilizationPercentage: 80
 
+# Gestion des nœuds Kubernetes
 nodeSelector: {}
-
 tolerations: []
-
 affinity: {}
+
+# Variables d'environnement (optionnel)
+env:
+  - name: APP_ENV
+    value: "production"
+  - name: DB_HOST
+    valueFrom:
+      secretKeyRef:
+        name: db-secret
+        key: db-host
