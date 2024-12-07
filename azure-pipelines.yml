@@ -76,16 +76,3 @@ steps:
     install: true
     wait: true
     timeout: $(timeout)
-
-# Step 8: Rollback on Failure
-- task: HelmDeploy@0
-  displayName: 'Rollback on Failure'
-  condition: failed()
-  inputs:
-    azureSubscription: $(kubernetesServiceConnection)
-    azureResourceGroup: 'K8S_RG'
-    kubernetesCluster: 'MyAKSCluster'
-    namespace: $(namespace)
-    command: rollback
-    releaseName: $(releaseName)
-    revision: 0  # Rollback to the previous revision
