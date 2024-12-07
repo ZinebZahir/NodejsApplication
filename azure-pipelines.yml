@@ -39,7 +39,7 @@ steps:
     azureContainerRegistry: $(acrurl)
     command: package
     chartPath: helm  # Répertoire contenant le chart Helm
-    destination: '$(Build.ArtifactStagingDirectory)/helm'  # Répertoire de sortie pour le fichier `.tgz`
+    destination: 'C:\Users\hp\Desktop\NodeApp\helm'  # Répertoire de sortie pour le fichier `.tgz`
     chartVersion: '$(Build.BuildId)'
 
 # Étape 4 : Vérifier le contenu du chart Helm empaqueté
