@@ -49,8 +49,8 @@ steps:
   displayName: 'Deploy to Kubernetes'
   inputs:
     azureSubscription: $(kubernetesServiceConnection)
-    azureResourceGroup: 'YourResourceGroupName'
-    kubernetesCluster: 'Your-K8S-Cluster-Name'
+    azureResourceGroup: 'K8S_RG'
+    kubernetesCluster: 'MyAKSCluster'
     namespace: $(namespace)
     command: upgrade
     chartType: FilePath
@@ -67,8 +67,8 @@ steps:
   condition: failed()  # Exécute cette tâche uniquement si une tâche précédente échoue
   inputs:
     azureSubscription: $(kubernetesServiceConnection)
-    azureResourceGroup: 'YourResourceGroupName'
-    kubernetesCluster: 'Your-K8S-Cluster-Name'
+    azureResourceGroup: 'K8S_RG'
+    kubernetesCluster: 'MyAKSClustere'
     namespace: $(namespace)
     command: rollback
     releaseName: $(releaseName)
