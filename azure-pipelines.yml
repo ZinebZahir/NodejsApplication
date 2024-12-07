@@ -2,7 +2,7 @@ trigger:
 - main  # Déclenche le pipeline sur des commits dans la branche main
 
 pool:
-  vmImage: 'ubuntu-latest'
+  name: 'default'
 
 variables:
   acrurl: 'lavender.azurecr.io'  # URL du registre ACR
