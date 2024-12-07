@@ -1,0 +1,40 @@
+pool:
+  name: Default
+variables:
+  acrurl: ' lavender.azurecr.io'
+
+steps:
+- task: Docker@0
+  displayName: 'Build an image'
+  inputs:
+    azureSubscription: 'K8S_SERVICE_CONNECTION'
+    azureContainerRegistry: '{"loginServer":"lavender.azurecr.io", "id" : "/subscriptions/095846c3-8075-4879-a286-8172117c2260/resourceGroups/K8S_RG/providers/Microsoft.ContainerRegistry/registries/lavender"}'
+    imageName: '$(acrurl)/sampleapi:$(Build.BuildId)'
+
+- task: Docker@0
+  displayName: 'Push an image'
+  inputs:
+    azureSubscription: 'K8S_SERVICE_CONNECTION'
+    azureContainerRegistry: '{"loginServer":"lavender.azurecr.io", "id" : "/subscriptions/095846c3-8075-4879-a286-8172117c2260/resourceGroups/K8S_RG/providers/Microsoft.ContainerRegistry/registries/lavender"}'
+    imageName: '$(acrurl)/sampleapi:$(Build.BuildId)'
+
+- task: HelmInstaller@0
+  displayName: 'Install Helm 2.14.1'
+
+- task: HelmDeploy@1
+  displayName: 'helm package'
+  inputs:
+    azureSubscriptionForACR: 'K8S_SERVICE_CONNECTION'
+    azureResourceGroupForACR: 'K8S_RG'
+    azureContainerRegistry: lavender.azurecr.io
+    command: package
+    chartPath: helm
+    chartVersion: '$(Build.BuildId)'
+    chartNameForACR: Chart
+    chartPathForACR: helm/Chart.yaml
+
+- task: PublishPipelineArtifact@1
+  displayName: 'Publish Pipline Artifact'
+  inputs:
+    targetPath: '$(Build.ArtifactStagingDirectory)'
+    artifact: sampleapi
