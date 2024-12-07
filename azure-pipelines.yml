@@ -1,53 +1,61 @@
 trigger:
-- main
+- main  # Déclenche le pipeline sur des commits dans la branche `main`
 
 pool:
   name: Default
 
 variables:
-  acrurl: 'lavender.azurecr.io'
-  kubernetesServiceConnection: 'K8S_SERVICE_CONNECTION'
-  namespace: 'default'
-  releaseName: 'sampleapi-release'
+  acrurl: 'lavender.azurecr.io'  # URL du registre ACR
+  kubernetesServiceConnection: 'K8S_SERVICE_CONNECTION'  # Service Connection pour Kubernetes
+  namespace: 'default'  # Namespace Kubernetes
+  releaseName: 'sampleapi-release'  # Nom du release Helm
 
 steps:
-# Étapes CI
+# Étape 1 : Construire et pousser l'image Docker
 - task: Docker@0
-  displayName: 'Build an image'
+  displayName: 'Build Docker Image'
   inputs:
     azureSubscription: $(kubernetesServiceConnection)
-    azureContainerRegistry: '{"loginServer":"lavender.azurecr.io", "id": "/subscriptions/..."}'
+    azureContainerRegistry: '{"loginServer":"$(acrurl)", "id" : "/subscriptions/..."}'
     imageName: '$(acrurl)/sampleapi:$(Build.BuildId)'
 
 - task: Docker@0
-  displayName: 'Push an image'
+  displayName: 'Push Docker Image to ACR'
   inputs:
     azureSubscription: $(kubernetesServiceConnection)
-    azureContainerRegistry: '{"loginServer":"lavender.azurecr.io", "id": "/subscriptions/..."}'
+    azureContainerRegistry: '{"loginServer":"$(acrurl)", "id" : "/subscriptions/..."}'
     imageName: '$(acrurl)/sampleapi:$(Build.BuildId)'
 
-- task: HelmInstaller@0
-  displayName: 'Install Helm 2.14.1'
+# Étape 2 : Installer Helm
+- task: HelmInstaller@1
+  displayName: 'Install Helm'
 
+# Étape 3 : Empaqueter le chart Helm
 - task: HelmDeploy@1
-  displayName: 'helm package'
+  displayName: 'Package Helm Chart'
   inputs:
     azureSubscriptionForACR: $(kubernetesServiceConnection)
     azureResourceGroupForACR: 'K8S_RG'
-    azureContainerRegistry: lavender.azurecr.io
+    azureContainerRegistry: $(acrurl)
     command: package
-    chartPath: helm
+    chartPath: helm  # Répertoire contenant le chart Helm
+    destination: '$(Build.ArtifactStagingDirectory)'  # Répertoire de sortie pour le fichier `.tgz`
     chartVersion: '$(Build.BuildId)'
-    chartNameForACR: Chart
-    chartPathForACR: helm/Chart.yaml
 
+# Étape 4 : Vérifier le contenu du chart Helm empaqueté
+- script: |
+    echo "Listing files in $(Build.ArtifactStagingDirectory):"
+    ls -la $(Build.ArtifactStagingDirectory)
+  displayName: 'Verify Packaged Helm Chart'
+
+# Étape 5 : Publier le chart Helm comme artefact
 - task: PublishPipelineArtifact@1
   displayName: 'Publish Helm Chart as Artifact'
   inputs:
-    targetPath: 'helm/*.tgz'
-    artifact: helm-chart
+    targetPath: '$(Build.ArtifactStagingDirectory)/*.tgz'
+    artifact: 'helm-chart'
 
-# Étapes CD
+# Étape 6 : Téléchargement et déploiement avec Helm
 - task: DownloadPipelineArtifact@2
   displayName: 'Download Helm Chart Artifact'
   inputs:
@@ -55,10 +63,11 @@ steps:
     path: '$(System.ArtifactsDirectory)/helm'
 
 - script: |
-    echo "Vérification des fichiers téléchargés :"
+    echo "Listing downloaded Helm Chart files:"
     ls -la $(System.ArtifactsDirectory)/helm
-  displayName: 'Verify Helm Chart Files'
+  displayName: 'Verify Downloaded Helm Chart'
 
+# Étape 7 : Déployer sur Kubernetes avec Helm
 - task: HelmDeploy@0
   displayName: 'Deploy to Kubernetes'
   inputs:
@@ -74,4 +83,15 @@ steps:
       image.repository=$(acrurl)/sampleapi
       image.tag=$(Build.BuildId)
     install: true
-  continueOnError: false
+
+# Étape 8 : Rollback en cas d’échec
+- task: HelmDeploy@0
+  displayName: 'Rollback on Failure'
+  condition: failed()  # S'exécute uniquement si une étape précédente échoue
+  inputs:
+    azureSubscription: $(kubernetesServiceConnection)
+    azureResourceGroup: 'K8S_RG'
+    kubernetesCluster: 'MyAKSCluster'
+    namespace: $(namespace)
+    command: rollback
+    releaseName: $(releaseName)
