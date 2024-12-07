@@ -39,21 +39,21 @@ steps:
     azureContainerRegistry: $(acrurl)
     command: package
     chartPath: helm  # Répertoire contenant le chart Helm
-    destination: '$(Build.ArtifactStagingDirectory)'  # Répertoire de sortie pour le fichier `.tgz`
+    destination: '$(Build.ArtifactStagingDirectory)/helm'  # Répertoire de sortie pour le fichier `.tgz`
     chartVersion: '$(Build.BuildId)'
 
 # Étape 4 : Vérifier le contenu du chart Helm empaqueté
 - script: |
-    echo "Listing files in $(Build.ArtifactStagingDirectory):"
-    dir "$(Build.ArtifactStagingDirectory)"
-  displayName: 'Verify Packaged Helm Chart'
+    echo "Listing contents of Artifact Staging Directory:"
+    dir "$(Build.ArtifactStagingDirectory)/helm"
+  displayName: 'Debug: List Artifact Staging Directory'
 
 
 # Étape 5 : Publier le chart Helm comme artefact
 - task: PublishPipelineArtifact@1
   displayName: 'Publish Helm Chart as Artifact'
   inputs:
-    targetPath: '$(Build.ArtifactStagingDirectory)\nodesampleapi-*.tgz'
+    targetPath: '$(Build.ArtifactStagingDirectory)/helm/*.tgz'
     artifact: 'helm-chart'
 
 # Étape 6 : Téléchargement et déploiement avec Helm
