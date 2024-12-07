@@ -41,6 +41,7 @@ stages:
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
+          az account set --subscription 095846c3-8075-4879-a286-8172117c2260
           az aks get-credentials --resource-group K8S_RG --name MyAKSCluster
           kubectl config set-context --current --namespace=$(namespace)
 
