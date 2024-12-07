@@ -10,12 +10,14 @@ application:
 replicaCount: 1
 
 image:
-  repository: lavender.azurecr.io
+  repository: lavender.azurecr.io/sampleapi
   pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "v1"
+  tag: "32"
 
-imagePullSecrets: []
+imagePullSecrets:
+  - name: lavender-acr-secret
+
 nameOverride: ""
 fullnameOverride: ""
 
